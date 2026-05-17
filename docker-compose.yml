@@ -1,0 +1,19 @@
+services: 
+  app: 
+    build: 
+      context: . 
+      dockerfile: Dockerfile
+    image: basic-app
+    container_name: basic-app
+    ports: 
+      -  "3001:3001" 
+    env_file: 
+      - .env.local
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - WATCHPACK_POLLING_INTERVAL=1000
+    command: npm run dev
