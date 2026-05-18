@@ -2,7 +2,8 @@ name: Build & Push Docker Image
 
 on:
   push:
-    branches: [ "main" ]
+    tags:
+      - 'v*.*.*'
 
 jobs:
   build:
@@ -27,6 +28,6 @@ jobs:
           context: .
           file: ./Dockerfile.prod
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/basic-app:v1.0.${{ github.run_number }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/basic-app:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
