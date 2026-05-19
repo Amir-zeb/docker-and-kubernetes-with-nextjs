@@ -467,8 +467,12 @@ events {}
 
 http {  
 	# addition
-	upstream app {  
-		server app:3000;  
+	resolver 127.0.0.11 valid=10s;
+	
+	upstream app {
+		zone app 64k;
+		least_conn;
+		server app:3001 resolve;
 	}
 	# --------
 	server {    
@@ -477,15 +481,36 @@ http {
 			proxy_pass http://app; # remove port
 			proxy_http_version 1.1;
 			proxy_set_header Upgrade $http_upgrade;
-			proxy_set_header Connection "upgrade";    
+			proxy_set_header Connection "upgrade";
+			proxy_set_header Host $host;
+			proxy_set_header X-Real-IP $remote_addr;
+			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 		}  
 	}
 }
 ```
 
 **Breaking into pieces:**
+- `events {}` Required block in every Nginx config. Left empty = Nginx manages connections with default settings.
 - `upstream` block defines a group of backend servers.
-- `upstream backend` creates a backend group named `backend`. Inside it, we define multiple application containers: ```server app-1:3000;server app-2:3000;server app-3:3000;```. Nginx will distribute traffic between them automatically.
+- `resolver 127.0.0.11 valid=10s` Tells Nginx to use Docker's internal DNS server to look up hostnames
+	-   `valid=10s` = re-check DNS every 10 seconds
+	-   This is what allows Nginx to discover all 3 app container IPs instead of caching just one
+- `upstream app` block
+	-   Defines the group of backend servers Nginx will forward traffic to
+	-   `zone app 64k` — allocates 64kb of shared memory so all Nginx worker processes share the same upstream state
+	-   `least_conn` — sends each new request to whichever container has the **fewest active connections** (smarter than round-robin)
+	-   `server app:3001 resolve` — the `resolve` flag tells Nginx to **keep re-resolving** the `app` hostname dynamically, picking up new/removed containers automatically
+- `server` block
+	-   Defines a virtual server listening on port 80
+	-   This is the entry point for all incoming HTTP traffic
+- `location /` block — the proxy rules
+	-   `proxy_pass http://app` — forward all requests to the upstream group defined above
+	-   `proxy_http_version 1.1` — use HTTP/1.1 (required for keepalives and WebSockets)
+	-   `Upgrade` + `Connection "upgrade"` — WebSocket support headers
+	-   `Host $host` — forwards the original domain name to the app
+	-   `X-Real-IP` — tells your app the **real client IP**, not Nginx's internal IP
+	-   `X-Forwarded-For` — appends client IP to a chain (useful if there are multiple proxies)
 
 ----------
 
@@ -514,7 +539,7 @@ export  async  function  GET() {
 	});
 }
 # cmd : curl http://localhost/api/instance
-# every time you will get different hostname
+# Total number of instances three, So every time you hit api you will get different hostname
 ```
 
 #### Important Limitation of Docker Compose Scaling
