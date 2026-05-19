@@ -12,7 +12,7 @@
 
 - [Download Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/)
 - Install WSL (Windows Subsystem for Linux):
-```bash wsl --install ```
+```wsl --install ```
 > Restart your machine after WSL installs. ---
 
 # Config Docker
@@ -28,8 +28,8 @@ COPY . .
 EXPOSE 3000
 CMD ["npm", "run", "dev"]
 ```
-Line by line in plain English:
 
+**Breaking it into pieces:**
 -  `FROM node:22-alpine` — use Node 22 LTS (stable, long-term support)
 -  `WORKDIR /app` — work inside a folder called `/app` inside the container
 -  `COPY package.json ...` — copy your package files in first
@@ -162,6 +162,7 @@ docker  compose  down  -v
 |See last 50 (change the number according to need) lines only| `docker compose logs --tail=50`|
 |Image rename OR add or update tag|`docker tag old-image-name:latest new-image-name:v1.0.0`|
   
+------
 # Production Dockerfile
 
 #### Why do we need a production ready Dockerfile?
@@ -274,42 +275,10 @@ docker  build  -f  Dockerfile.prod  -t  your-dockerhub-username/basic-app:v1.0.0
 
 > Always version your images. Never rely on `latest` alone — you won't know what's actually running.
 
-#### What is Docker Hub?
-
-Docker Hub is a registry — a place to store and share your Docker images. Think of it like GitHub but for images. When Kubernetes needs to run your app, it pulls the image directly from here.
-
-If you do not have an account, please register first at docker hub. [click here](https://hub.docker.com)
-
-----------
-
-#### Step 3 — Push to Docker Hub
-
-```bash
-# Login to Docker Hub
-docker  login
-
-# Push versioned image
-docker  push  your-dockerhub-username/basic-app:v1.0.0
-
-# Push latest tag
-docker  push  your-dockerhub-username/basic-app:latest
-```
-
-----------
-
-#### Step 4 — Verify
-
-Go to:
-```
-https://hub.docker.com/r/your-username/basic-app
-```
-
-You'll see both tags `v1.0.0` and `latest` listed under your repository.
-
 #### To run your production image locally follow these steps**
 
 ```bash
-# Step 1 - create docker-compose.prod.yml file
+# Step 1 - create docker-compose.prod.yml file at root
 services:
 	app:
 		image:  username/basic-app:v1.0.0
@@ -331,19 +300,286 @@ docker  compose  -f  docker-compose.prod.yml  up  -d
 # after that check localhost:3000
 ```
 
+-----
+
+## Nginx
+
+#### What is Nginx?
+Nginx is a web server and reverse proxy server. It is commonly used to handle incoming traffic and forward requests to backend applications like Node.js, Next.js, Python, or Java applications.
+
+In simple words:
+
+> Nginx sits in front of your application and controls how requests reach your app.
+
+----------
+
+#### Why are we configuring Nginx in this guide?
+The main purpose of this guide is to understand how applications are deployed in real production environments.
+
+In development, we usually access applications directly like this:
+```
+localhost:3000
+```
+But in production, applications are usually placed behind a reverse proxy like Nginx.
+
+Instead of users directly accessing the application container or process, requests first go to Nginx, and then Nginx forwards those requests to the application.
+
+This helps us understand how real-world deployments work on cloud servers and VPS environments.
+
+#### Is Nginx used locally?
+
+Usually, Nginx is installed and configured on:
+-   Cloud servers
+-   VPS servers
+-   Linux production machines
+
+Examples:
+-   AWS EC2
+-   DigitalOcean Droplets
+-   Azure VM
+-   Google Cloud VM
+
+In production deployments, Nginx commonly handles:
+-   Reverse proxy
+-   SSL/HTTPS
+-   Load balancing
+-   Routing traffic
+-   Serving static files
+
+In this guide, we are using Nginx locally only for learning purposes so we can understand how production systems work.
+
+-----
+
+### Setup reverse proxy using Nginx
+
+#### Step 1: Update `docker-compose.prod.yml` file
+
+```yml
+services:
+	app:
+		image: username/basic-app:v1.0.3
+		# remove ports from app service
+		# ports:
+		#--- - "3001:3001"
+
+		env_file:
+			- .env.local
+
+# additional service
+	nginx:
+		image: nginx:latest
+		container_name: nginx
+		ports:
+			- "80:80"
+		volumes:
+			- ./nginx/nginx.conf:/etc/nginx/nginx.conf
+		depends_on:
+			- app
+```
+
+**Breaking into pieces:**
+
+-  `ports` remove from the **app service** because we don’t want the app to be directly accessible from the browser.
+- `nginx:` We create an Nginx service because in real production systems, Nginx always runs as a separate service in front of the application, so we replicate the same architecture using Docker to understand real-world deployments.
+
+#### Step 2: Create `nginx/nginx.conf` at project root
+
+```
+events {}
+
+http {  
+	server {    
+		listen 80;
+		location / {      
+			proxy_pass http://app:3000;
+			proxy_http_version 1.1;
+			proxy_set_header Upgrade $http_upgrade;
+			proxy_set_header Connection "upgrade";    
+		}  
+	}
+}
+```
+
+**Breaking into pieces:**
+- `listen 80` This tells Nginx to listen for incoming HTTP requests on port 80. Port 80 is the default port for HTTP traffic.
+- `location /` For all incoming routes and requests, use this configuration.
+	Examples:
+	-   `/`
+	-   `/about`
+	-   `/products`
+- `proxy_pass` Forward incoming requests to the application running on port 3000.
+	Here:
+	-   `app` is the application container or service name
+	-   `3000` is the application port
+
+#### Run docker compose
+```bash
+# this will run you docker compose prod file
+docker compose -f docker-compose.prod.yml up -d
+
+# check http://localhost
+
+# to close service use
+docker compose down -v --remove-orphans
+# --remove-orphans : without this flag nginx container will remain active 
+```
+-----
+#### How Reverse Proxy Works
+
+Without Nginx:
+```
+Browser → Application
+```
+With Nginx:
+```
+Browser → Nginx → Application
+```
+The user only talks to Nginx.
+Nginx then forwards the request to the backend application.
+The application response comes back through Nginx to the user.
+
+#### Why Reverse Proxy is Useful
+
+Using a reverse proxy provides many benefits in production environments.
+
+- **Better Security** : Users do not directly access the application process or container. Nginx acts as a middle layer.
+- **SSL/HTTPS Handling** : Nginx is commonly used to configure HTTPS and SSL certificates.
+	Example: ``` https://example.com ```
+- **Load Balancing** : Nginx can distribute traffic across multiple application servers.
+	Example:``` User Requests      ↓    Nginx   ↙  ↓  ↘App 1 App 2 App 3```
+- **Better Production Architecture** : Nginx helps separate:
+	-   traffic handling
+	-   routing
+	-   SSL
+	-   application logic
+
+-----------
+
+### Setup Nginx load balancer
+
+#### Step 1: Update `nginx/nginx.conf` for Load Balancing
+
+Now we need to tell Nginx about multiple application containers.
+Update the Nginx configuration:
+
+```
+events {}
+
+http {  
+	# addition
+	upstream app {  
+		server app:3000;  
+	}
+	# --------
+	server {    
+		listen 80;
+		location / {      
+			proxy_pass http://app; # remove port
+			proxy_http_version 1.1;
+			proxy_set_header Upgrade $http_upgrade;
+			proxy_set_header Connection "upgrade";    
+		}  
+	}
+}
+```
+
+**Breaking into pieces:**
+- `upstream` block defines a group of backend servers.
+- `upstream backend` creates a backend group named `backend`. Inside it, we define multiple application containers: ```server app-1:3000;server app-2:3000;server app-3:3000;```. Nginx will distribute traffic between them automatically.
+
+----------
+
+#### Scaling the Application
+Docker Compose allows us to create multiple containers of the same service.
+Run the following command:
+```bash
+docker compose -f docker-compose.prod.yml up -d --scale app=3
+```
+This creates:
+```
+app-1app-2app-3
+```
+
+You can verify using:
+```
+docker ps
+```
+
+to check load balancer is working API to check serving hostname
+```
+# path : app/api/instance/route.js
+export  async  function  GET() {
+	return  Response.json({
+		instance:  process.env.HOSTNAME || "unknown",
+	});
+}
+# cmd : curl http://localhost/api/instance
+# every time you will get different hostname
+```
+
+#### Important Limitation of Docker Compose Scaling
+
+Docker Compose scaling is mainly useful for:
+-   Learning
+-   Development
+-   Small environments
+
+In real production systems, orchestration tools like:
+
+-   Kubernetes
+-   Docker Swarm
+
+are commonly used for advanced scaling, self-healing, and automatic load balancing.
+Each new request may go to a different container.
+
+----
+
+#### What is Docker Hub?
+
+Docker Hub is a registry — a place to store and share your Docker images. Think of it like GitHub but for images. When Kubernetes needs to run your app, it pulls the image directly from here.
+
+If you do not have an account, please register first at docker hub. [click here](https://hub.docker.com)
+
+----------
+
+#### Step 3 — Push to Docker Hub
+
+```bash
+# Login to Docker Hub
+docker  login
+
+# Push versioned image
+docker  push  your-dockerhub-username/basic-app:v1.0.0
+```
+
+----------
+
+#### Step 4 — Verify
+
+Go to:
+```
+https://hub.docker.com/r/your-username/basic-app
+```
+
+You'll see both tags `v1.0.0` listed under your repository.
+
+
+
+
 ----------
 
 #### Your file structure now
 
 ```
 your-project/
+├── nginx/nginx.conf ← reverse proxy && load balancer
 ├── Dockerfile ← development
 ├── Dockerfile.prod ← production
 ├── docker-compose.yml ← development
 ├── docker-compose.prod.yml ← production
 ├── .dockerignore
 ├── .env.local
-└── src/
+└── app/
 ```
 
 # CI/CD Pipeline with GitHub Actions
@@ -449,3 +685,5 @@ Pushes username/basic-app:v1.x.x to Docker Hub
     ↓
 Kubernetes pulls new image (next section)
 ```
+
+# Kubernetes
