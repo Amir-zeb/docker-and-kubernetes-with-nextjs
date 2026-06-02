@@ -1,6 +1,31 @@
 
 # Docker And Kubernetes For Absolute Beginners
 
+## Table of Contents
+
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+- [Config Docker](#config-docker)
+- [Production Dockerfile](#production-dockerfile)
+- [Nginx](#nginx)
+	- [Reverse proxy](#setup-reverse-proxy-using-nginx)
+	- [Load balancer](#setup-nginx-load-balancer)
+	- [Manual Scaling](#manual-scaling)
+- [Docker Hub](#docker-hub)
+- [CI/CD Pipeline](#cicd-pipeline-with-github-actions)
+- [Introduction to Kubernetes](#introduction-to-kubernetes)
+	- [Namespace](#namespace)
+	- [Deployment](#deployments)
+	- [Service](#services)
+	- [Setup Ingress](#setup-ingress)
+	- [Horizontal Pod Autoscaling (HPA)](#horizontal-pod-autoscaling-hpa)
+- [Final Architecture Summary](#final-architecture-summary)
+- [What You Learned](#what-you-learned)
+- [Final Note](#final-note)
+- [About the Author](#about-the-author)
+
+-------
+
 ## System Requirements
 
 - 4 GB RAM minimum (8 GB recommended)
@@ -8,12 +33,15 @@
 - ~1 GB disk space for Docker Desktop
 -  **OS:** Windows 10/11 (64-bit)
 
-### Installation
+-------
+
+## Installation
 
 - [Download Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/)
 - Install WSL (Windows Subsystem for Linux):
 ```wsl --install ```
 > Restart your machine after WSL installs. ---
+------
 
 # Config Docker
 
@@ -38,6 +66,8 @@ CMD ["npm", "run", "dev"]
 -  `EXPOSE 3000` — tell Docker your app uses port 3000
 -  `CMD ["npm", "run", "dev"]` — start the app
 
+------
+
 ### Step 2 — Create a `.dockerignore` in your project root
 
 ```ignore
@@ -48,6 +78,7 @@ node_modules
 
 # This works like `.gitignore` — it stops Docker from copying unnecessary files into your image, keeping it small and fast.
 ```
+------
 
 ### Step 3 — Create a `.env.local` file (if you don't have one)
 
@@ -56,7 +87,7 @@ If your app uses environment variables, make sure your `.env.local` exists in th
 ```
 NEXT_PUBLIC_API_URL=[http://localhost:3000]
 ```
-
+------
 ### Step 4 — Run these commands
 
 ```bash
@@ -77,7 +108,7 @@ docker  run  --rm  -p  3000:3000  --env-file  .env.local  basic-app
 -  `-p 3000:3000` Map port 3000 on your machine → port 3000 inside the container
 -  `--env-file .env.local` Read your `.env.local` file and inject every variable into the container
 -  `basic-app`The image name to run (what you built with `docker build -t basic-app .`)
-
+------
 ### Step 5 --- Simplify with docker compose file
 
 Create a `docker-compose.yml` in your project root
@@ -113,6 +144,8 @@ services:
 -  `/app/node_modules` Without this line, the volume above would overwrite the container's `node_modules` with your local one (built for Windows) and break things. This line says — _"for node_modules specifically, ignore what's on my machine and keep the container's own copy."_
 
 The polling variables make the file watcher work inside Docker on Windows/Mac, and together they give you HMR.
+
+-------
 
 ### Commands
 
@@ -183,6 +216,7 @@ Stage 1 (deps) → install dependencies
 Stage 2 (builder) → build the app
 Stage 3 (runner) → run the built app only
 ```
+------
 
 #### Step 1 — Create `Dockerfile.prod` in your project root
 
@@ -311,7 +345,6 @@ In simple words:
 
 > Nginx sits in front of your application and controls how requests reach your app.
 
-----------
 
 #### Why are we configuring Nginx in this guide?
 The main purpose of this guide is to understand how applications are deployed in real production environments.
@@ -381,6 +414,8 @@ services:
 
 -  `ports` remove from the **app service** because we don’t want the app to be directly accessible from the browser.
 - `nginx:` We create an Nginx service because in real production systems, Nginx always runs as a separate service in front of the application, so we replicate the same architecture using Docker to understand real-world deployments.
+
+------
 
 #### Step 2: Create `nginx/nginx.conf` at project root
 
@@ -514,7 +549,7 @@ http {
 
 ----------
 
-#### Scaling the Application
+### Manual Scaling
 Docker Compose allows us to create multiple containers of the same service.
 Run the following command:
 ```bash
@@ -558,6 +593,8 @@ are commonly used for advanced scaling, self-healing, and automatic load balanci
 Each new request may go to a different container.
 
 ----
+
+## Docker Hub
 
 #### What is Docker Hub?
 
@@ -625,7 +662,6 @@ make changes → push a tag → everything else happens automatically
 
 CI/CD stands for Continuous Integration and Continuous Delivery. In plain English — every time you're ready to release, one command triggers the entire build and delivery process without you touching anything manually.
 
-----------
 
 #### Setting up GitHub Secrets
 
@@ -638,7 +674,6 @@ DOCKER_PASSWORD  → your Docker Hub access token
 
 > Use an access token not your actual password. Generate one at Docker Hub → Account Settings → Security → New Access Token.
 
-----------
 
 ####  Create a docker-build.yml in Github action
 ```yml
@@ -711,13 +746,15 @@ Pushes username/basic-app:v1.x.x to Docker Hub
 Kubernetes pulls new image (next section)
 ```
 
+------
+
 # Introduction to Kubernetes
 
-### What is Kubernetes?
+#### What is Kubernetes?
 
 Kubernetes is a container orchestration platform that helps us deploy, manage, scale, and monitor containerized applications.
 
-#### Enable Kubernetes in Docker Desktop
+##### Enable Kubernetes in Docker Desktop
 
 No extra installation needed. Docker Desktop comes with Kubernetes built in — it's just turned off by default.
 
@@ -759,23 +796,6 @@ Kubernetes can:
 
 ----------
 
-### Mapping Docker Compose Concepts to Kubernetes
-
-If you already understand Docker Compose, many Kubernetes concepts will feel familiar.
-
-| Docker Compose | Kubernetes |
-|--|--|
-| Service | Deployment |
-| Container | Pod |
-| Network Communication | Service |
-| Scale Command | Replicas |
-| Reverse Proxy | Ingress |
-
-
-The names are different, but many of the ideas are similar.
-
-----------
-
 ### Our Learning Goal
 
 In the Kubernetes section, we will learn how Kubernetes manages these components using:
@@ -807,9 +827,7 @@ Pods
 
 Each component has a specific responsibility, and together they create a scalable and production-ready application deployment.
 
-## Setup Namespace, Deployments and Services
-
-### Namespaces:
+## Namespace
 
 A namespace is a logical grouping of resources inside a Kubernetes cluster. It helps organize applications and prevents resource name conflicts.
 
@@ -833,7 +851,7 @@ kubectl get namespaces
 ```
 -------
 
-### Deployments:
+## Deployment
 A Deployment is responsible for creating and managing application Pods. Instead of creating Pods manually, we create a Deployment and Kubernetes ensures the desired number of Pods are always running. If a Pod crashes, Kubernetes automatically creates a replacement.
 
 #### Create k8s/deployment.yml file
@@ -893,7 +911,7 @@ kubectl describe pod -n learning
 
 -------
 
-### Services :
+## Service
 Pods are temporary. When a Pod is recreated, its IP address changes. A Service provides a stable way to access Pods. Instead of connecting directly to Pods, applications connect through a Service.
 
 ```bash
@@ -1020,8 +1038,9 @@ Example:
 ```
 Low traffic  → 1 podMedium traffic → 3 podsHigh traffic → 10 pods
 ```
+---------
 
-### Step 1 — Prerequisite (VERY IMPORTANT)
+#### Step 1 — Prerequisite (VERY IMPORTANT)
 
 HPA needs metrics.
 Check if metrics server exists:
@@ -1033,7 +1052,7 @@ If NOT present, install it (Docker Desktop usually already has it, but sometimes
 
 ----------
 
-### Step 2 — Enable metrics (if needed)
+#### Step 2 — Enable metrics (if needed)
 
 If metrics are missing:
 ```bash
@@ -1053,7 +1072,7 @@ kubectl patch deployment metrics-server -n kube-system --type=json -p "[{\"op\":
 
 ----------
 
-### Step 3 — Create HPA
+#### Step 3 — Create HPA
 
 Now we create autoscaling rule.
 
@@ -1081,8 +1100,6 @@ spec:
           averageUtilization: 50
 ```
 
-----------
-
 **Breaking into pieces**
 
 - `minReplicas` : Always keep at least 1 pod running.
@@ -1091,7 +1108,7 @@ spec:
 
 ----------
 
-### Step 4 — Apply HPA
+#### Step 4 — Apply HPA
 
 ```bash
 kubectl apply -f k8s/hpa.yml
@@ -1160,49 +1177,39 @@ Horizontal Pod Autoscaler (HPA)
 
 ----------
 
-## What You Learned in This Guide
+## What You Learned
 
-### Docker Basics
+#### Docker Basics
 
 -   Images and containers
 -   Docker Hub and tagging
 -   Docker Compose for multi-container apps
 
-----------
-
-### Nginx Reverse Proxy (Conceptual)
+#### Nginx Reverse Proxy (Conceptual)
 
 -   How traffic routing works manually
 -   How load balancing is configured in Docker
 
-----------
-
-### Kubernetes Core Concepts
+#### Kubernetes Core Concepts
 
 -   Cluster setup using Docker Desktop
 -   Namespaces for organization
 -   Deployments for managing Pods
 -   Services for stable networking
 
-----------
-
-### Ingress (Production Entry Point)
+#### Ingress (Production Entry Point)
 
 -   Replaced manual Nginx configuration
 -   Single entry point for multiple services
 -   Path-based routing inside cluster
 
-----------
-
-### Auto Scaling (HPA)
+#### Auto Scaling (HPA)
 
 -   Scales Pods based on CPU usage
 -   Requires resource requests
 -   Automatically handles traffic changes
 
-----------
-
-### Key Production Concepts You Now Understand
+#### Key Production Concepts You Now Understand
 
 -   Containers are ephemeral (Pods can restart anytime)
 -   Services provide stable networking
@@ -1226,3 +1233,17 @@ You now understand how real systems like SaaS platforms, APIs, and large-scale w
 ## Final Note
 
 This guide gave you a **real-world foundation of container orchestration**, not just theory. The same concepts you implemented here are used in production systems running on cloud platforms like AWS, GCP, and Azure.
+
+## About the Author
+
+Hi, I’m **Amir Zeb**, a Full Stack Developer with experience in building modern web applications using the **MERN stack, Next.js, PostgreSql**.
+
+This guide was created as part of my hands-on learning journey to understand how containerized applications move from development (Docker) to production-grade orchestration (Kubernetes).
+
+----------
+
+## 🔗 Connect with me
+
+-   GitHub: https://github.com/amir-zeb
+-   LinkedIn: https://linkedin.com/in/amir-zeb
+-   Portfolio: https://portfolio-v2-66d20.web.app
