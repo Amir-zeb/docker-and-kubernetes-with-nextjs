@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basic-app
+  namespace: learning
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: basic-app
+
+  template:
+    metadata:
+      labels:
+        app: basic-app
+
+    spec:
+      containers:
+        - name: app
+          image: amirzeb001/basic-app:v1.0.3
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+          resources:
+            requests:
+              cpu: 100m
+            limits:
+              cpu: 200m
