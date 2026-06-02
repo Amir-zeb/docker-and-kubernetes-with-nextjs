@@ -539,7 +539,7 @@ export  async  function  GET() {
 	});
 }
 # cmd : curl http://localhost/api/instance
-# Total number of instances three, So every time you hit api you will get different hostname
+# Total number of instances three,So every time you hit api you will get different hostname
 ```
 
 #### Important Limitation of Docker Compose Scaling
@@ -711,4 +711,518 @@ Pushes username/basic-app:v1.x.x to Docker Hub
 Kubernetes pulls new image (next section)
 ```
 
-# Kubernetes
+# Introduction to Kubernetes
+
+### What is Kubernetes?
+
+Kubernetes is a container orchestration platform that helps us deploy, manage, scale, and monitor containerized applications.
+
+#### Enable Kubernetes in Docker Desktop
+
+No extra installation needed. Docker Desktop comes with Kubernetes built in — it's just turned off by default.
+
+**Step 1** — Open Docker Desktop
+**Step 2** — Go to `Settings` → `Kubernetes`
+**Step 3** — Check `Enable Kubernetes` and click `Apply & Restart`
+
+Docker Desktop will take a minute to start the cluster. You'll see a green Kubernetes indicator in the bottom left when it's ready.
+
+#### Verify everything is working
+
+```bash
+# Check cluster is running
+kubectl cluster-info
+
+# Check your node is ready
+kubectl get nodes
+```
+
+You should see something like:
+
+```
+NAME             STATUS   ROLES           AGE
+docker-desktop   Ready    control-plane   1m
+```
+
+`Ready` means your cluster is up and running. You're set.
+
+### What Problems Does Kubernetes Solve?
+
+Kubernetes can:
+
+-   Restart failed containers automatically
+-   Scale applications up and down
+-   Distribute traffic between containers
+-   Deploy new versions with minimal downtime
+-   Manage networking between services
+-   Maintain the desired state of an application
+
+----------
+
+### Mapping Docker Compose Concepts to Kubernetes
+
+If you already understand Docker Compose, many Kubernetes concepts will feel familiar.
+
+| Docker Compose | Kubernetes |
+|--|--|
+| Service | Deployment |
+| Container | Pod |
+| Network Communication | Service |
+| Scale Command | Replicas |
+| Reverse Proxy | Ingress |
+
+
+The names are different, but many of the ideas are similar.
+
+----------
+
+### Our Learning Goal
+
+In the Kubernetes section, we will learn how Kubernetes manages these components using:
+
+-   Pods
+-   Deployments
+-   Services
+-   Ingress
+
+By the end, we will deploy the same application architecture using Kubernetes and understand how modern production environments manage containerized applications.
+
+----------
+
+### What We Will Build
+
+Throughout this section, we will gradually build:
+
+```
+Internet
+   ↓
+Ingress
+   ↓
+Service
+   ↓
+Deployment
+   ↓
+Pods
+```
+
+Each component has a specific responsibility, and together they create a scalable and production-ready application deployment.
+
+## Setup Namespace, Deployments and Services
+
+### Namespaces:
+
+A namespace is a logical grouping of resources inside a Kubernetes cluster. It helps organize applications and prevents resource name conflicts.
+
+#### Create a Namespace
+
+Create **k8s/namespace.yaml**  file at root
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:  
+	name: learning
+```
+
+Apply it:
+```bash
+# Apply namespace
+kubectl apply -f k8s/namespace.yaml
+
+# Verify
+kubectl get namespaces
+```
+-------
+
+### Deployments:
+A Deployment is responsible for creating and managing application Pods. Instead of creating Pods manually, we create a Deployment and Kubernetes ensures the desired number of Pods are always running. If a Pod crashes, Kubernetes automatically creates a replacement.
+
+#### Create k8s/deployment.yml file
+
+```yml
+apiVersion: apps/v1  
+kind: Deployment  
+metadata:  
+	name: basic-app  
+	namespace: learning  
+spec:  
+	replicas: 1  
+  
+	selector:  
+		matchLabels:  
+			app: basic-app  
+  
+	template:  
+		metadata:  
+			labels:  
+				app: basic-app  
+  
+		spec:  
+			containers:  
+				- name: app  
+				image: username/basic-app  
+				ports:  
+					- containerPort: 3001
+				resources:
+					requests:
+						cpu: 100m
+					limits:
+						cpu: 200m
+```
+
+#### Apply Deployment
+
+```bash
+# Apply deployment
+kubectl apply -f k8s/deployment.yaml
+
+# Verify
+kubectl get deployments -n learning
+
+# View Pods
+kubectl get pods -n learning
+
+# restart deployment
+kubectl rollout restart deployment basic-app
+
+# delete deployment
+kubectl delete deployment basic-app -n learning
+
+# Check Pod description
+kubectl describe pod -n learning
+```
+
+-------
+
+### Services :
+Pods are temporary. When a Pod is recreated, its IP address changes. A Service provides a stable way to access Pods. Instead of connecting directly to Pods, applications connect through a Service.
+
+```bash
+apiVersion: v1  
+kind: Service  
+metadata:  
+	name: basic-app-service  
+	namespace: learning  
+spec:  
+	selector:  
+		app: basic-app  	
+	  
+	ports:  
+		- port: 80  
+		targetPort: 3001  
+	  
+	type: ClusterIP
+```
+
+#### Apply Service
+
+```bash
+# Apply service
+kubectl apply -f service.yaml
+
+#Verify
+kubectl get services -n learning
+```
+
+If the pod is `Running` and no errors appear, your app is deployed correctly.
+```bash
+# Port-forward is a temporary bridge between your local machine and the Kubernetes cluster.
+kubectl port-forward svc/basic-app-service 8080:80 -n learning
+
+# Then open in your browser: http://localhost:8080
+```
+
+--------
+
+## Setup Ingress
+
+#### Install NGINX Ingress Controller
+Run this command:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.2/deploy/static/provider/cloud/deploy.yaml
+```
+
+This installs:
+
+-   Ingress controller
+-   required RBAC permissions
+-   networking components
+
+#### Wait for it to start
+
+Check pods:
+```
+kubectl get pods -n ingress-nginx
+```
+You should see something like:
+```
+ingress-nginx-controller-xxxxx   Running
+```
+Wait until STATUS = `Running`.
+
+----------
+### Create a file **k8s/ingress.yml**
+
+Now we define routing rules.
+```yml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: basic-app-ingress
+  namespace: learning
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: basic-app-service
+                port:
+                  number: 80
+```
+
+**Breaking into pieces**
+
+ - `host: localhost` Only traffic coming to localhost
+ - `path: /` All routes (/, /about, /anything)
+ - backend service : Send traffic to your Kubernetes Service
+
+
+```bash
+# Apply Ingress
+kubectl apply -f k8s/ingress.yml
+
+# Verify Ingress
+kubectl get ingress -n learning
+
+# Then open in your browser: http://localhost
+```
+
+---------
+
+## Horizontal Pod Autoscaling (HPA)
+
+#### What is Auto Scaling?
+Automatically increasing or decreasing the number of Pods based on load.
+
+Instead of manually doing:
+```
+replicas: 3 → 10
+```
+Kubernetes does it automatically.
+Example:
+```
+Low traffic  → 1 podMedium traffic → 3 podsHigh traffic → 10 pods
+```
+
+### Step 1 — Prerequisite (VERY IMPORTANT)
+
+HPA needs metrics.
+Check if metrics server exists:
+
+```bash
+kubectl get deployment metrics-server -n kube-system
+```
+If NOT present, install it (Docker Desktop usually already has it, but sometimes missing).
+
+----------
+
+### Step 2 — Enable metrics (if needed)
+
+If metrics are missing:
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Verify metrics
+kubectl top nodes
+# error: Metrics API not available
+```
+If metrics server is installed but not available follow these steps to fix it.
+
+```bash
+# use this to update metrics server after that metrics server will available
+kubectl patch deployment metrics-server -n kube-system --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/args\",\"value\":[\"--cert-dir=/tmp\",\"--secure-port=10250\",\"--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname\",\"--kubelet-use-node-status-port\",\"--metric-resolution=15s\",\"--kubelet-insecure-tls\"]}]"
+# if you get error on command in cmd use powershell
+```
+
+----------
+
+### Step 3 — Create HPA
+
+Now we create autoscaling rule.
+
+```yml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: basic-app-hpa
+  namespace: learning
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: basic-app
+
+  minReplicas: 1
+  maxReplicas: 5
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+```
+
+----------
+
+**Breaking into pieces**
+
+- `minReplicas` : Always keep at least 1 pod running.
+- `maxReplicas` : Never go beyond 5 pods.
+- `CPU` : If CPU usage goes above 50%, scale up.
+
+----------
+
+### Step 4 — Apply HPA
+
+```bash
+kubectl apply -f k8s/hpa.yml
+
+#Check autoscaler
+kubectl get hpa -n learning
+```
+
+You will see:
+```
+NAME            REFERENCE              TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+basic-app-hpa   Deployment/basic-app   cpu: 1%/50%   1         5         4          5m47s
+```
+
+#### Create a load generator pod
+
+```
+kubectl run load-generator --rm -it --image=busybox -- /bin/sh
+```
+
+Inside the pod run:
+
+```
+while true; do wget -q -O- http://basic-app-service.learning.svc.cluster.local; done
+```
+
+This generates continuous traffic.
+
+----------
+
+#### Watch pods scale
+
+Open another terminal:
+
+```
+kubectl get pods -n learning -w
+```
+You will see something like this
+
+```
+$ kubectl get pods -n learning -w
+NAME                         READY   STATUS    RESTARTS   AGE
+basic-app-5f98f6dd8b-65lj2   1/1     Running   0          51s
+basic-app-5f98f6dd8b-6mgxh   1/1     Running   0          3m51s
+basic-app-5f98f6dd8b-gmtsq   1/1     Running   0          3m51s
+basic-app-5f98f6dd8b-jbp5d   1/1     Running   0          4m10s
+```
+
+## Final Architecture Summary
+
+By this stage, we have built a complete containerized system using Kubernetes:
+
+```
+User (Browser)
+      ↓
+Ingress Controller
+      ↓
+Service (ClusterIP)
+      ↓
+Deployment
+      ↓
+Pods (Application Instances)
+      ↓
+Horizontal Pod Autoscaler (HPA)
+```
+
+----------
+
+## What You Learned in This Guide
+
+### Docker Basics
+
+-   Images and containers
+-   Docker Hub and tagging
+-   Docker Compose for multi-container apps
+
+----------
+
+### Nginx Reverse Proxy (Conceptual)
+
+-   How traffic routing works manually
+-   How load balancing is configured in Docker
+
+----------
+
+### Kubernetes Core Concepts
+
+-   Cluster setup using Docker Desktop
+-   Namespaces for organization
+-   Deployments for managing Pods
+-   Services for stable networking
+
+----------
+
+### Ingress (Production Entry Point)
+
+-   Replaced manual Nginx configuration
+-   Single entry point for multiple services
+-   Path-based routing inside cluster
+
+----------
+
+### Auto Scaling (HPA)
+
+-   Scales Pods based on CPU usage
+-   Requires resource requests
+-   Automatically handles traffic changes
+
+----------
+
+### Key Production Concepts You Now Understand
+
+-   Containers are ephemeral (Pods can restart anytime)
+-   Services provide stable networking
+-   Ingress manages external traffic
+-   Deployments ensure desired state
+-   HPA ensures performance under load
+
+----------
+
+### What This Means in Real World
+
+You now understand how real systems like SaaS platforms, APIs, and large-scale web apps run:
+
+-   Automatically scaled
+-   Self-healing
+-   Load balanced
+-   Exposed securely through Ingress
+
+----------
+
+## Final Note
+
+This guide gave you a **real-world foundation of container orchestration**, not just theory. The same concepts you implemented here are used in production systems running on cloud platforms like AWS, GCP, and Azure.
